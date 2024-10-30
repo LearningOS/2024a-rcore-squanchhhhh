@@ -1,8 +1,8 @@
 //! File and filesystem-related syscalls
+use crate::fs::inode::ROOT_INODE;
 use crate::fs::{open_file, OpenFlags, Stat};
-use crate::mm::{translated_byte_buffer, translated_str, UserBuffer};
+use crate::mm::{translated_byte_buffer, translated_refmut, translated_str, UserBuffer};
 use crate::task::{current_task, current_user_token};
-
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
     trace!("kernel:pid[{}] sys_write", current_task().unwrap().pid.0);
     let token = current_user_token();
@@ -81,7 +81,18 @@ pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
         "kernel:pid[{}] sys_fstat NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let task = current_task().unwrap();
+    let token = current_user_token();
+    let node = &task.inner_exclusive_access().fd_table[_fd];
+    let st: &mut Stat = translated_refmut(token, _st) ;
+    if let Some(ref file_node) = node.as_ref() {
+            file_node.stat(st);
+
+    } else {
+        return -1;  
+    }
+
+    0  
 }
 
 /// YOUR JOB: Implement linkat.
@@ -90,14 +101,30 @@ pub fn sys_linkat(_old_name: *const u8, _new_name: *const u8) -> isize {
         "kernel:pid[{}] sys_linkat NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let token = current_user_token();
+    let binding = translated_str(token, _old_name);
+    let old_name  = binding.as_str();
+    let translated_str = &translated_str(token,_new_name);
+    let new_name = translated_str.as_str();
+    // same name
+    println!("old name : {} - new name : {}",old_name,new_name);
+    if old_name == new_name{
+        return -1;
+    }
+    ROOT_INODE.link(old_name, new_name);
+    0
 }
 
 /// YOUR JOB: Implement unlinkat.
+/// 在目录中删除这个diskinode，并设置对应的位图为0
 pub fn sys_unlinkat(_name: *const u8) -> isize {
     trace!(
         "kernel:pid[{}] sys_unlinkat NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let token = current_user_token();
+    let name = translated_str(token,_name);
+
+    ROOT_INODE.unlink(&name);
+    0
 }

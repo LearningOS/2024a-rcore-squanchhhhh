@@ -5,6 +5,7 @@ use crate::mm::{
     kernel_stack_position, MapPermission, MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE,
 };
 use crate::trap::{trap_handler, TrapContext};
+use crate::config::MAX_SYSCALL_NUM;
 
 /// The task control block (TCB) of a task.
 pub struct TaskControlBlock {
@@ -28,12 +29,22 @@ pub struct TaskControlBlock {
 
     /// Program break
     pub program_brk: usize,
+
+    ///增加额外的字段来记录运行时间,在每次轮转到这个进程的时候记录当前时间
+    pub start_time: usize,
+
+    ///记录系统调用的次数
+    pub call_count:[u32; MAX_SYSCALL_NUM],
 }
 
 impl TaskControlBlock {
     /// get the trap context
     pub fn get_trap_cx(&self) -> &'static mut TrapContext {
         self.trap_cx_ppn.get_mut()
+    }
+    ///getmemset
+    pub fn get_memset(& mut self) -> &mut MemorySet{
+        &mut self.memory_set
     }
     /// get the user token
     pub fn get_user_token(&self) -> usize {
@@ -43,6 +54,7 @@ impl TaskControlBlock {
     pub fn new(elf_data: &[u8], app_id: usize) -> Self {
         // memory_set with elf program headers/trampoline/trap context/user stack
         let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        println!("app_id:{},entry_point:{}",app_id,entry_point);
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
             .unwrap()
@@ -63,6 +75,8 @@ impl TaskControlBlock {
             base_size: user_sp,
             heap_bottom: user_sp,
             program_brk: user_sp,
+            call_count:[0;MAX_SYSCALL_NUM],
+            start_time:0
         };
         // prepare TrapContext in user space
         let trap_cx = task_control_block.get_trap_cx();
